@@ -65,8 +65,10 @@ def _draw_centered(
     font,
     fill,
     size: int = KEY_SIZE,
+    stroke_width: Optional[int] = None,
+    stroke_fill=None,
 ) -> None:
-    stroke = _stroke_for(font)
+    stroke = _stroke_for(font) if stroke_width is None else stroke_width
     bbox = draw.textbbox((0, 0), text, font=font, stroke_width=stroke)
     w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
     x = (size - w) // 2
@@ -76,7 +78,7 @@ def _draw_centered(
         font=font,
         fill=fill,
         stroke_width=stroke,
-        stroke_fill=fill,
+        stroke_fill=stroke_fill if stroke_fill is not None else fill,
     )
 
 
@@ -266,8 +268,29 @@ def progress_segment_key(
     draw.rectangle([0, 0, size, size], outline=BG, width=2)
 
     if label:
-        font = _fit_font(draw, label, size - 8, 34)
-        _draw_centered(draw, label, size // 2, font, (20, 20, 20), size)
+        font = _fit_font(draw, label, size - 8, 40)
+        # White text with a dark outline stays legible over green or orange.
+        _draw_centered(
+            draw,
+            label,
+            size // 2 - 4,
+            font,
+            FG,
+            size,
+            stroke_width=3,
+            stroke_fill=(10, 10, 10),
+        )
+        cap_font = _load_font(14)
+        _draw_centered(
+            draw,
+            "SESSION",
+            size - 16,
+            cap_font,
+            FG,
+            size,
+            stroke_width=2,
+            stroke_fill=(10, 10, 10),
+        )
     return img
 
 
