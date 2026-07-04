@@ -21,7 +21,7 @@ class Deck:
         self._brightness = brightness
         self._key_size: Optional[tuple[int, int]] = None
 
-    def open(self) -> "Deck":
+    def open(self, reset: bool = True) -> "Deck":
         try:
             decks = DeviceManager().enumerate()
         except Exception as exc:  # ProbeError etc. when the HID backend is missing
@@ -37,7 +37,8 @@ class Deck:
             )
         self._deck = decks[0]
         self._deck.open()
-        self._deck.reset()
+        if reset:
+            self._deck.reset()
         self._deck.set_brightness(self._brightness)
         fmt = self._deck.key_image_format()
         self._key_size = fmt["size"]
@@ -74,12 +75,19 @@ class Deck:
         for index, image in images.items():
             self.set_key_image(index, image)
 
-    def close(self) -> None:
+    def close(self, clear: bool = True) -> None:
+        """Release the device.
+
+        When ``clear`` is False the last rendered images are left on screen
+        (used for cron/one-shot mode, where the deck keeps displaying them
+        after we disconnect).
+        """
         if not self._deck:
             return
         try:
-            self._deck.reset()
-            self._deck.set_brightness(0)
+            if clear:
+                self._deck.reset()
+                self._deck.set_brightness(0)
         finally:
             try:
                 self._deck.close()

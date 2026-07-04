@@ -1,8 +1,9 @@
 """Entry point: refresh the Stream Deck Claude usage dashboard on a timer.
 
 Usage:
-    python -m src.main                 # run against the device
-    python -m src.main --once          # render one frame and exit
+    python -m src.main                 # run forever, refresh on a timer
+    python -m src.main --cron          # render one frame, leave it on screen (cron)
+    python -m src.main --once          # render one frame, then clear the screen
     python -m src.main --preview out.png  # save a composite preview, no device
     python -m src.main --config path/to/config.yaml
 """
@@ -53,6 +54,31 @@ def run_preview(config: Config, path: str) -> int:
     images = _compute_dashboard(config)
     _save_preview(images, path)
     print(f"Preview saved to {path}")
+    return 0
+
+
+def run_once_cron(config: Config) -> int:
+    """Render a single frame and leave it on the deck (for cron/one-shot use).
+
+    Unlike the interactive loop, this does not clear or dim the screen on exit,
+    so the deck keeps showing the last render until the next cron invocation.
+    """
+    from .device.deck import Deck, DeckNotFoundError
+
+    try:
+        deck = Deck(brightness=config.brightness).open(reset=False)
+    except DeckNotFoundError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+    try:
+        deck.render(_compute_dashboard(config))
+    except Exception as exc:
+        print(f"refresh error: {exc}", file=sys.stderr)
+        deck.close(clear=False)
+        return 1
+
+    deck.close(clear=False)
     return 0
 
 
@@ -107,7 +133,16 @@ def run_loop(config: Config, once: bool = False) -> int:
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Stream Deck Claude usage dashboard")
     parser.add_argument("--config", help="Path to config file", default=None)
-    parser.add_argument("--once", action="store_true", help="Render one frame and exit")
+    parser.add_argument(
+        "--cron",
+        action="store_true",
+        help="Render one frame and exit, leaving it on screen (for cron)",
+    )
+    parser.add_argument(
+        "--once",
+        action="store_true",
+        help="Render one frame to the device and exit (clears screen on exit)",
+    )
     parser.add_argument(
         "--preview",
         metavar="PATH",
@@ -119,6 +154,8 @@ def main(argv=None) -> int:
 
     if args.preview:
         return run_preview(config, args.preview)
+    if args.cron:
+        return run_once_cron(config)
     return run_loop(config, once=args.once)
 
 
