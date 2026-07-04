@@ -7,6 +7,11 @@ of a **Stream Deck XL** (4x8). It refreshes every 30 seconds and shows:
   burn rate, projected usage, and a big **countdown to reset**.
 - **Weekly usage of every model** vs configurable limits, drawn as per-model
   percentage bars.
+- A bottom-row **progress bar** of session usage that fills green to orange.
+
+![Dashboard on a Stream Deck XL](docs/screenshot.png)
+
+> The screenshot above uses sample data for illustration.
 
 ## How it works
 
