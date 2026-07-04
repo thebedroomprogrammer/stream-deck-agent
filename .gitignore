@@ -3,3 +3,7 @@ __pycache__/
 *.pyc
 config.yaml
 .DS_Store
+
+# Rendered previews may contain personal usage data
+preview.png
+*.preview.png
