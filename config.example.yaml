@@ -1,0 +1,71 @@
+# Stream Deck Claude Usage Dashboard - example configuration.
+# Copy this file to config.yaml and adjust the values for your account/plan.
+
+# How often the dashboard refreshes (seconds).
+refresh_seconds: 30
+
+# Stream Deck screen brightness, 0-100.
+brightness: 60
+
+# Length of a Claude "session" window in hours. Anthropic currently uses 5h.
+session_window_hours: 5
+
+# Number of trailing days counted as "this week" for weekly usage totals.
+weekly_window_days: 7
+
+# Directory that holds Claude Code usage logs. "~" is expanded.
+# Leave as-is unless you use a custom CLAUDE_CONFIG_DIR.
+claude_projects_dir: "~/.claude/projects"
+
+# Per-model configuration. Each entry is matched against the model id found in
+# the logs (message.model) using a case-insensitive substring "match".
+# The first matching entry wins, so order from most to least specific.
+#
+#   display_name        Short label shown on the key (keep it short).
+#   weekly_token_limit  Your weekly token budget for this model (total tokens).
+#                       Usage is drawn as a percentage bar of this limit.
+#   weekly_cost_limit   (optional) Weekly USD budget; used if you prefer a cost
+#                       based bar. Only applied when limit_metric: cost.
+#   color               [R, G, B] accent color for this model's bar.
+#   price               (optional) USD price per 1M tokens for cost estimation:
+#                         { input, output, cache_write, cache_read }
+models:
+  - match: "opus"
+    display_name: "Opus"
+    weekly_token_limit: 200000000
+    color: [180, 120, 255]
+    price: { input: 15.0, output: 75.0, cache_write: 18.75, cache_read: 1.5 }
+
+  - match: "sonnet"
+    display_name: "Sonnet"
+    weekly_token_limit: 400000000
+    color: [90, 170, 255]
+    price: { input: 3.0, output: 15.0, cache_write: 3.75, cache_read: 0.3 }
+
+  - match: "fable"
+    display_name: "Fable"
+    weekly_token_limit: 400000000
+    color: [90, 220, 180]
+    price: { input: 3.0, output: 15.0, cache_write: 3.75, cache_read: 0.3 }
+
+  - match: "haiku"
+    display_name: "Haiku"
+    weekly_token_limit: 500000000
+    color: [255, 200, 90]
+    price: { input: 1.0, output: 5.0, cache_write: 1.25, cache_read: 0.1 }
+
+  - match: "gpt"
+    display_name: "GPT"
+    weekly_token_limit: 100000000
+    color: [120, 200, 120]
+
+# Fallback used for models that don't match anything above.
+default_model:
+  weekly_token_limit: 100000000
+  color: [150, 150, 150]
+
+# Which metric drives the percentage bars: "tokens" or "cost".
+limit_metric: tokens
+
+# Overall session budget (tokens) used for the session % tile in row 0.
+session_token_limit: 40000000
