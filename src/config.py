@@ -65,6 +65,7 @@ class Config:
     session_token_limit: int = 40_000_000
     usage_api_enabled: bool = True
     usage_api_poll_seconds: int = 180
+    usage_api_auto_refresh: bool = False
 
     def resolve_model(self, model_id: str) -> ModelConfig:
         """Return the first ModelConfig whose match is a substring of model_id."""
@@ -160,5 +161,6 @@ def load_config(path: Optional[str] = None) -> Config:
         session_token_limit=int(data.get("session_token_limit", 40_000_000)),
         usage_api_enabled=bool(usage_api.get("enabled", True)),
         usage_api_poll_seconds=int(usage_api.get("poll_seconds", 180)),
+        usage_api_auto_refresh=bool(usage_api.get("auto_refresh", False)),
     )
     return cfg

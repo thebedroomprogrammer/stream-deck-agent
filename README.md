@@ -37,12 +37,16 @@ Anthropic computes utilization with a proprietary, model-weighted formula. To sh
 the real number, this tool reads the same undocumented endpoint `/usage` itself
 uses: `https://api.anthropic.com/api/oauth/usage`.
 
-- **Read-only auth.** It reads the OAuth access token Claude Code already stores in
-  your macOS Keychain (`Claude Code-credentials`) and uses it only while valid. It
-  never refreshes or writes the token, so it can't disturb your Claude Code login.
-- **When the token is expired** (i.e. you haven't used Claude Code recently), the
-  session tiles show `n/a`. Using Claude Code refreshes the token and the real
-  numbers reappear on the next poll.
+- **Auth via the Keychain.** It reads the OAuth token Claude Code stores in your
+  macOS Keychain (`Claude Code-credentials`). These access tokens are short-lived
+  (~1h) and only refresh when the Claude Code CLI itself runs.
+- **`usage_api.auto_refresh`** controls what happens when that token is expired:
+  - `false` (default, read-only): the session tiles show `n/a` until you next use
+    the Claude Code CLI. Never writes the token, so it can't disturb your login.
+  - `true`: the tool refreshes the token itself (using the refresh token) and
+    writes the rotated token back to the Keychain, so the real percentage shows
+    even when the CLI isn't running. This shares/rotates the same token Claude Code
+    uses; the first Keychain write may prompt for permission (choose Always Allow).
 - **Rate limits.** The endpoint 429s aggressively, so responses are cached to
   `~/.cache/stream-deck-agent/usage_cache.json` and refreshed at most every
   `usage_api.poll_seconds` (default 180s). The display still updates every 30s and
@@ -156,8 +160,9 @@ See `config.example.yaml` for all options. Key ones:
 - `limit_metric` — `tokens` or `cost`, controls what the percentage bars represent.
 - `session_token_limit` — fallback token cap for the session % when the usage API
   is unavailable.
-- `usage_api.enabled` / `usage_api.poll_seconds` — toggle the real `/usage` data
-  and how often it's fetched (see "Real session usage" above).
+- `usage_api.enabled` / `usage_api.poll_seconds` / `usage_api.auto_refresh` —
+  toggle the real `/usage` data, how often it's fetched, and whether to refresh an
+  expired token (see "Real session usage" above).
 
 ## Layout (32 keys)
 

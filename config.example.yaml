@@ -80,3 +80,8 @@ session_token_limit: 40000000
 usage_api:
   enabled: true
   poll_seconds: 180
+  # When true, refresh the OAuth token if it's expired (using the refresh token)
+  # and write the rotated token back to the Keychain, so the real percentage
+  # shows even when the Claude Code CLI isn't running. This shares/rotates the
+  # same token Claude Code uses; leave false to stay strictly read-only.
+  auto_refresh: false

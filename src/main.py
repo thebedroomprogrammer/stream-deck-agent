@@ -31,7 +31,9 @@ def _compute_dashboard(config: Config):
     session = build_session_stats(records, config, now=now)
     weekly = build_weekly_stats(records, config, now=now)
     api = get_usage(
-        enabled=config.usage_api_enabled, poll_seconds=config.usage_api_poll_seconds
+        enabled=config.usage_api_enabled,
+        poll_seconds=config.usage_api_poll_seconds,
+        auto_refresh=config.usage_api_auto_refresh,
     )
     return build_dashboard(session, weekly, config, now=datetime.now(), api=api)
 

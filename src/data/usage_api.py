@@ -26,6 +26,8 @@ from pathlib import Path
 from typing import Optional
 
 OAUTH_USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
+OAUTH_TOKEN_URL = "https://console.anthropic.com/v1/oauth/token"
+OAUTH_CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
 KEYCHAIN_SERVICE = "Claude Code-credentials"
 OAUTH_BETA_HEADER = "oauth-2025-04-20"
 CACHE_PATH = Path.home() / ".cache" / "stream-deck-agent" / "usage_cache.json"
@@ -74,8 +76,8 @@ def _parse_iso(value) -> Optional[datetime]:
         return None
 
 
-def _read_token() -> tuple[Optional[str], Optional[int]]:
-    """Return (access_token, expires_at_ms) from the Keychain, read-only."""
+def _read_credentials() -> Optional[dict]:
+    """Return the parsed Claude Code credentials JSON from the Keychain."""
     try:
         raw = subprocess.check_output(
             ["security", "find-generic-password", "-s", KEYCHAIN_SERVICE, "-w"],
@@ -83,13 +85,49 @@ def _read_token() -> tuple[Optional[str], Optional[int]]:
             timeout=5,
         )
     except (subprocess.SubprocessError, FileNotFoundError, OSError):
-        return None, None
+        return None
     try:
-        data = json.loads(raw)
+        return json.loads(raw)
     except (ValueError, TypeError):
-        return None, None
-    oauth = data.get("claudeAiOauth", data)
-    return oauth.get("accessToken"), oauth.get("expiresAt")
+        return None
+
+
+def _keychain_account() -> Optional[str]:
+    """Return the account (acct) attribute of the credentials item."""
+    try:
+        out = subprocess.check_output(
+            ["security", "find-generic-password", "-s", KEYCHAIN_SERVICE],
+            stderr=subprocess.DEVNULL,
+            timeout=5,
+            text=True,
+        )
+    except (subprocess.SubprocessError, FileNotFoundError, OSError):
+        return None
+    for line in out.splitlines():
+        line = line.strip()
+        if line.startswith('"acct"'):
+            # Format: "acct"<blob>="value"
+            _, _, value = line.partition("=")
+            return value.strip().strip('"') or None
+    return None
+
+
+def _write_credentials(account: str, data: dict) -> bool:
+    """Update the Keychain credentials item in place (preserves the item)."""
+    try:
+        subprocess.run(
+            [
+                "security", "add-generic-password",
+                "-U", "-a", account, "-s", KEYCHAIN_SERVICE,
+                "-w", json.dumps(data),
+            ],
+            check=True,
+            capture_output=True,
+            timeout=5,
+        )
+        return True
+    except (subprocess.SubprocessError, FileNotFoundError, OSError):
+        return False
 
 
 def _token_valid(expires_at_ms: Optional[int]) -> bool:
@@ -97,6 +135,61 @@ def _token_valid(expires_at_ms: Optional[int]) -> bool:
         return False
     now_ms = datetime.now(timezone.utc).timestamp() * 1000
     return expires_at_ms > now_ms + TOKEN_EXPIRY_BUFFER_MS
+
+
+def _refresh_access_token(refresh_token: str) -> Optional[dict]:
+    """Exchange a refresh token for a new token set. Returns the raw response."""
+    body = json.dumps(
+        {
+            "grant_type": "refresh_token",
+            "refresh_token": refresh_token,
+            "client_id": OAUTH_CLIENT_ID,
+        }
+    ).encode()
+    req = urllib.request.Request(
+        OAUTH_TOKEN_URL,
+        data=body,
+        headers={
+            "Content-Type": "application/json",
+            "User-Agent": "stream-deck-agent/1.0",
+            "Accept": "application/json",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read())
+    except (urllib.error.URLError, ValueError, TimeoutError, OSError):
+        return None
+    if not isinstance(data, dict) or "access_token" not in data:
+        return None
+    return data
+
+
+def _try_refresh(credentials: dict) -> Optional[str]:
+    """Refresh the access token and persist it back to the Keychain.
+
+    Returns the new access token, or None if refresh failed. The rotated
+    refresh token is saved atomically so Claude Code stays in sync.
+    """
+    oauth = credentials.get("claudeAiOauth", credentials)
+    refresh_token = oauth.get("refreshToken")
+    account = _keychain_account()
+    if not refresh_token or not account:
+        return None
+
+    resp = _refresh_access_token(refresh_token)
+    if resp is None:
+        return None
+
+    now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+    oauth["accessToken"] = resp["access_token"]
+    oauth["refreshToken"] = resp.get("refresh_token", refresh_token)
+    if resp.get("expires_in"):
+        oauth["expiresAt"] = now_ms + int(resp["expires_in"]) * 1000
+    credentials["claudeAiOauth"] = oauth
+
+    _write_credentials(account, credentials)
+    return oauth["accessToken"]
 
 
 def _http_get_usage(token: str) -> Optional[dict]:
@@ -168,8 +261,14 @@ def _from_cache(cache: dict, reason: str = "") -> ApiUsage:
     )
 
 
-def get_usage(enabled: bool = True, poll_seconds: int = 180) -> ApiUsage:
-    """Return real usage, refreshing from the API at most every ``poll_seconds``."""
+def get_usage(
+    enabled: bool = True, poll_seconds: int = 180, auto_refresh: bool = False
+) -> ApiUsage:
+    """Return real usage, refreshing from the API at most every ``poll_seconds``.
+
+    When ``auto_refresh`` is True and the Keychain access token is expired, the
+    token is refreshed via its refresh token (and written back to the Keychain).
+    """
     if not enabled:
         return ApiUsage(reason="disabled")
 
@@ -182,12 +281,18 @@ def get_usage(enabled: bool = True, poll_seconds: int = 180) -> ApiUsage:
         if fetched and (now - fetched).total_seconds() < poll_seconds:
             return _from_cache(cache)
 
-    # Cache is stale (or missing): try a read-only refresh.
-    token, expires_at = _read_token()
+    # Cache is stale (or missing): try to (re)fetch.
+    credentials = _read_credentials()
+    oauth = credentials.get("claudeAiOauth", credentials) if credentials else None
+    token = oauth.get("accessToken") if oauth else None
+    expires_at = oauth.get("expiresAt") if oauth else None
+
     if not token or not _token_valid(expires_at):
-        if cache:
-            return _from_cache(cache, reason="token expired; showing cached")
-        return ApiUsage(reason="token expired or unavailable")
+        token = _try_refresh(credentials) if (auto_refresh and credentials) else None
+        if not token:
+            if cache:
+                return _from_cache(cache, reason="token expired; showing cached")
+            return ApiUsage(reason="token expired or unavailable")
 
     payload = _http_get_usage(token)
     if payload is None:
