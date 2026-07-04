@@ -63,6 +63,8 @@ class Config:
     )
     limit_metric: str = "tokens"
     session_token_limit: int = 40_000_000
+    usage_api_enabled: bool = True
+    usage_api_poll_seconds: int = 180
 
     def resolve_model(self, model_id: str) -> ModelConfig:
         """Return the first ModelConfig whose match is a substring of model_id."""
@@ -144,6 +146,8 @@ def load_config(path: Optional[str] = None) -> Config:
 
     projects_dir = data.get("claude_projects_dir", "~/.claude/projects")
 
+    usage_api = data.get("usage_api", {}) or {}
+
     cfg = Config(
         refresh_seconds=int(data.get("refresh_seconds", 30)),
         brightness=int(data.get("brightness", 60)),
@@ -154,5 +158,7 @@ def load_config(path: Optional[str] = None) -> Config:
         default_model=default_model,
         limit_metric=str(data.get("limit_metric", "tokens")).lower(),
         session_token_limit=int(data.get("session_token_limit", 40_000_000)),
+        usage_api_enabled=bool(usage_api.get("enabled", True)),
+        usage_api_poll_seconds=int(usage_api.get("poll_seconds", 180)),
     )
     return cfg

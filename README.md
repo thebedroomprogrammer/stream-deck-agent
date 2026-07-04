@@ -24,10 +24,33 @@ renders one image per key and pushes them to the device.
 logs (~/.claude/projects) -> parser -> stats (session + weekly) -> layout -> Stream Deck
 ```
 
-> Note: Anthropic's real weekly *limit* numbers and server-side reset times are not
-> stored locally. Only your *usage* is. Limits are therefore read from `config.yaml`
-> (set them to match your plan). The session reset countdown is derived from the
-> 5-hour activity window.
+> Note: token counts, cost, and weekly per-model usage come from the local logs.
+> The **real session percentage and reset time** come from Claude's usage API (see
+> below) when available; otherwise the session % falls back to a token-based
+> estimate or shows `n/a`. Weekly per-model *limit* numbers are still read from
+> `config.yaml` (Anthropic doesn't expose per-model caps locally).
+
+## Real session usage (matches `/usage`)
+
+The token-based estimate can't match what Claude Code's `/usage` shows, because
+Anthropic computes utilization with a proprietary, model-weighted formula. To show
+the real number, this tool reads the same undocumented endpoint `/usage` itself
+uses: `https://api.anthropic.com/api/oauth/usage`.
+
+- **Read-only auth.** It reads the OAuth access token Claude Code already stores in
+  your macOS Keychain (`Claude Code-credentials`) and uses it only while valid. It
+  never refreshes or writes the token, so it can't disturb your Claude Code login.
+- **When the token is expired** (i.e. you haven't used Claude Code recently), the
+  session tiles show `n/a`. Using Claude Code refreshes the token and the real
+  numbers reappear on the next poll.
+- **Rate limits.** The endpoint 429s aggressively, so responses are cached to
+  `~/.cache/stream-deck-agent/usage_cache.json` and refreshed at most every
+  `usage_api.poll_seconds` (default 180s). The display still updates every 30s and
+  the reset countdown ticks live from the cached `resets_at`.
+- **Pro/Max/Team only.** Accounts using a raw `ANTHROPIC_API_KEY` can't use this
+  endpoint; the session % then falls back to the estimate/`n/a`.
+
+Disable it with `usage_api.enabled: false` to use the token-based estimate instead.
 
 ## Requirements
 
@@ -131,6 +154,10 @@ See `config.example.yaml` for all options. Key ones:
   `price` for cost estimation. Entries are matched by case-insensitive substring
   against the model id in the logs.
 - `limit_metric` — `tokens` or `cost`, controls what the percentage bars represent.
+- `session_token_limit` — fallback token cap for the session % when the usage API
+  is unavailable.
+- `usage_api.enabled` / `usage_api.poll_seconds` — toggle the real `/usage` data
+  and how often it's fetched (see "Real session usage" above).
 
 ## Layout (32 keys)
 

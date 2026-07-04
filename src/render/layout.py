@@ -16,6 +16,7 @@ from PIL import Image
 
 from ..config import Config
 from ..data.stats import SessionStats, WeeklyStats
+from ..data.usage_api import ApiUsage
 from . import tiles
 
 COLS = 8
@@ -26,6 +27,8 @@ MODEL_ROWS = (1, 2)
 MODEL_SLOTS = len(MODEL_ROWS) * COLS // 2  # 8 two-key model tiles
 PROGRESS_FIRST_KEY = PROGRESS_ROW * COLS  # key 24
 
+GREY = (70, 70, 78)
+
 
 def _session_percent(session: SessionStats, config: Config) -> float:
     limit = config.session_token_limit or 0
@@ -34,15 +37,58 @@ def _session_percent(session: SessionStats, config: Config) -> float:
     return session.total_tokens / limit
 
 
+def _fmt_hm(seconds: int) -> str:
+    seconds = max(0, int(seconds))
+    hours, rem = divmod(seconds, 3600)
+    return f"{hours:d}:{rem // 60:02d}"
+
+
+def _session_usage(
+    session: SessionStats, config: Config, api: Optional[ApiUsage]
+) -> tuple[str, Optional[float], Optional[int]]:
+    """Resolve the session usage fraction and reset seconds.
+
+    Returns (mode, fraction, reset_seconds) where mode is:
+        "real" - from Claude's usage API
+        "est"  - token-based estimate (API disabled or no data source)
+        "na"   - API enabled but unavailable (expired token / rate limited)
+    fraction is None only when mode == "na".
+    """
+    if api is not None and api.available and api.five_hour is not None:
+        bucket = api.five_hour
+        return "real", bucket.fraction, bucket.seconds_to_reset()
+
+    if api is None or not config.usage_api_enabled:
+        if session.active:
+            return "est", _session_percent(session, config), session.seconds_to_reset
+        return "est", 0.0, None
+
+    # API enabled but no data available right now.
+    return "na", None, (session.seconds_to_reset if session.active else None)
+
+
 def build_session_row(
-    session: SessionStats, config: Config, now: datetime
+    session: SessionStats,
+    config: Config,
+    now: datetime,
+    api: Optional[ApiUsage] = None,
 ) -> dict[int, Image.Image]:
     keys: dict[int, Image.Image] = {}
 
     keys[0] = tiles.title_key("CLAUDE", now.astimezone().strftime("%H:%M"))
 
-    if session.active:
+    mode, frac, reset_secs = _session_usage(session, config, api)
+
+    # Reset countdown (real reset from the API when available).
+    if reset_secs is not None:
+        keys[1] = tiles.countdown_key("RESET IN", _fmt_hm(reset_secs), "h:mm")
+    elif session.active:
         keys[1] = tiles.countdown_key("RESET IN", session.reset_countdown(), "h:mm")
+    else:
+        keys[1] = tiles.countdown_key("SESSION", "idle", "no active")
+
+    # Token counts / cost / burn / projection come from the local logs.
+    if session.active:
         keys[2] = tiles.stat_key("SESSION", tiles.format_tokens(session.total_tokens), "tokens")
         keys[3] = tiles.stat_key("COST", tiles.format_cost(session.cost_usd), "session")
         keys[4] = tiles.stat_key(
@@ -51,20 +97,23 @@ def build_session_row(
         keys[5] = tiles.stat_key(
             "PROJ", tiles.format_tokens(session.projected_tokens), "at reset"
         )
-        frac = _session_percent(session, config)
-        keys[6] = tiles.stat_key(
-            "USED",
-            f"{min(frac * 100, 999):.0f}%",
-            "of cap",
-            value_color=tiles.fraction_color(frac),
-        )
     else:
-        keys[1] = tiles.countdown_key("SESSION", "idle", "no active")
         keys[2] = tiles.stat_key("SESSION", "0", "tokens")
         keys[3] = tiles.stat_key("COST", "$0.00", "session")
         keys[4] = tiles.stat_key("BURN", "0", "tok/min")
         keys[5] = tiles.stat_key("PROJ", "0", "at reset")
-        keys[6] = tiles.stat_key("USED", "0%", "of cap")
+
+    # USED tile: real % from the API, an estimate, or n/a.
+    if frac is None:
+        keys[6] = tiles.stat_key("USED", "n/a", "no token", value_color=tiles.MUTED)
+    else:
+        subtitle = {"real": "of limit", "est": "est"}.get(mode, "")
+        keys[6] = tiles.stat_key(
+            "USED",
+            f"{min(frac * 100, 999):.0f}%",
+            subtitle,
+            value_color=tiles.fraction_color(frac),
+        )
 
     keys[7] = tiles.stat_key("UPDATED", now.astimezone().strftime("%H:%M:%S"), "every 30s")
     return keys
@@ -98,14 +147,28 @@ def build_model_tiles(
     return keys
 
 
-def build_progress_row(session: SessionStats, config: Config) -> dict[int, Image.Image]:
+def build_progress_row(
+    session: SessionStats, config: Config, api: Optional[ApiUsage] = None
+) -> dict[int, Image.Image]:
     """Render the bottom row as an 8-segment usage bar (0-100%).
 
     Segments fill left-to-right: unused = green, used = orange (red on
     overflow). The percentage is drawn on the current fill-front segment.
     """
     keys: dict[int, Image.Image] = {}
-    pct = _session_percent(session, config) if session.active else 0.0
+    _mode, frac, _reset = _session_usage(session, config, api)
+
+    if frac is None:
+        # No real data available: neutral grey bar with an n/a marker.
+        for i in range(COLS):
+            keys[PROGRESS_FIRST_KEY + i] = tiles.progress_segment_key(
+                seg_fill=0.0,
+                label="n/a" if i == COLS // 2 else "",
+                empty_color=GREY,
+            )
+        return keys
+
+    pct = frac
     overflow = pct > 1.0
     filled_exact = max(0.0, min(pct, 1.0)) * COLS  # keys-worth that are filled
 
@@ -132,13 +195,14 @@ def build_dashboard(
     weekly: WeeklyStats,
     config: Config,
     now: Optional[datetime] = None,
+    api: Optional[ApiUsage] = None,
 ) -> dict[int, Image.Image]:
     """Return a full 32-key image map. Unused keys are filled blank."""
     now = now or datetime.now()
     keys: dict[int, Image.Image] = {}
-    keys.update(build_session_row(session, config, now))
+    keys.update(build_session_row(session, config, now, api))
     keys.update(build_model_tiles(weekly, config))
-    keys.update(build_progress_row(session, config))
+    keys.update(build_progress_row(session, config, api))
 
     for i in range(KEY_COUNT):
         keys.setdefault(i, tiles.blank_key())

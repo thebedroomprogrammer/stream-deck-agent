@@ -67,5 +67,16 @@ default_model:
 # Which metric drives the percentage bars: "tokens" or "cost".
 limit_metric: tokens
 
-# Overall session budget (tokens) used for the session % tile in row 0.
+# Overall session budget (tokens) used as a *fallback* session % when the real
+# usage API (below) is unavailable.
 session_token_limit: 40000000
+
+# Real usage from Claude's /usage endpoint (undocumented /api/oauth/usage).
+# When enabled and the Claude Code OAuth token in your Keychain is valid, the
+# session percentage and reset countdown use Anthropic's real numbers instead of
+# the token-based estimate. Read-only: the token is never refreshed or written.
+# The endpoint rate-limits hard, so it is polled at most every poll_seconds and
+# cached to disk (~/.cache/stream-deck-agent/usage_cache.json).
+usage_api:
+  enabled: true
+  poll_seconds: 180

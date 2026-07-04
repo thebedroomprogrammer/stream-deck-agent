@@ -22,6 +22,7 @@ from .data.stats import build_session_stats, build_weekly_stats
 
 
 def _compute_dashboard(config: Config):
+    from .data.usage_api import get_usage
     from .render.layout import build_dashboard
 
     lookback = max(config.weekly_window_days + 1, config.session_window_hours / 24 + 1)
@@ -29,7 +30,10 @@ def _compute_dashboard(config: Config):
     records = load_usage_records(config.claude_projects_dir, lookback, now=now)
     session = build_session_stats(records, config, now=now)
     weekly = build_weekly_stats(records, config, now=now)
-    return build_dashboard(session, weekly, config, now=datetime.now())
+    api = get_usage(
+        enabled=config.usage_api_enabled, poll_seconds=config.usage_api_poll_seconds
+    )
+    return build_dashboard(session, weekly, config, now=datetime.now(), api=api)
 
 
 def _save_preview(images, path: str) -> None:
