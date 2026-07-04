@@ -2,8 +2,9 @@
 
 Grid: 4 rows x 8 columns (key index = row * 8 + col).
 
-    Row 0 (0-7)   Session summary
-    Rows 1-3 (8-31)  Up to 12 model tiles, 2 keys each
+    Row 0 (0-7)    Session summary
+    Rows 1-2 (8-23)  Up to 8 model tiles, 2 keys each
+    Row 3 (24-31)  Session usage progress bar (8 segments, 0-100%)
 """
 
 from __future__ import annotations
@@ -20,7 +21,10 @@ from . import tiles
 COLS = 8
 ROWS = 4
 KEY_COUNT = COLS * ROWS
-MODEL_SLOTS = 12  # (ROWS-1) * COLS / 2
+PROGRESS_ROW = 3  # bottom row reserved for the usage progress bar
+MODEL_ROWS = (1, 2)
+MODEL_SLOTS = len(MODEL_ROWS) * COLS // 2  # 8 two-key model tiles
+PROGRESS_FIRST_KEY = PROGRESS_ROW * COLS  # key 24
 
 
 def _session_percent(session: SessionStats, config: Config) -> float:
@@ -74,10 +78,10 @@ def build_model_tiles(
 
     models = weekly.models[:MODEL_SLOTS]
     for slot, model in enumerate(models):
-        base = KEY_COUNT - (ROWS - 1) * COLS + slot * 2  # first model key = index 8
+        base = MODEL_ROWS[0] * COLS + slot * 2  # first model key = index 8
         name_index = base
         bar_index = base + 1
-        if bar_index >= KEY_COUNT:
+        if bar_index >= PROGRESS_FIRST_KEY:
             break
 
         frac = model.limit_fraction(metric)
@@ -94,6 +98,35 @@ def build_model_tiles(
     return keys
 
 
+def build_progress_row(session: SessionStats, config: Config) -> dict[int, Image.Image]:
+    """Render the bottom row as an 8-segment usage bar (0-100%).
+
+    Segments fill left-to-right: unused = green, used = orange (red on
+    overflow). The percentage is drawn on the current fill-front segment.
+    """
+    keys: dict[int, Image.Image] = {}
+    pct = _session_percent(session, config) if session.active else 0.0
+    overflow = pct > 1.0
+    filled_exact = max(0.0, min(pct, 1.0)) * COLS  # keys-worth that are filled
+
+    # Boundary = last segment that has any orange (the "latest orange one").
+    boundary = 0
+    for i in range(COLS):
+        if filled_exact - i > 0:
+            boundary = i
+    label_text = f"{pct * 100:.0f}%"
+
+    for i in range(COLS):
+        seg = max(0.0, min(1.0, filled_exact - i))
+        show_label = label_text if i == boundary else ""
+        keys[PROGRESS_FIRST_KEY + i] = tiles.progress_segment_key(
+            seg_fill=1.0 if overflow else seg,
+            label=show_label,
+            overflow=overflow,
+        )
+    return keys
+
+
 def build_dashboard(
     session: SessionStats,
     weekly: WeeklyStats,
@@ -105,6 +138,7 @@ def build_dashboard(
     keys: dict[int, Image.Image] = {}
     keys.update(build_session_row(session, config, now))
     keys.update(build_model_tiles(weekly, config))
+    keys.update(build_progress_row(session, config))
 
     for i in range(KEY_COUNT):
         keys.setdefault(i, tiles.blank_key())

@@ -33,36 +33,36 @@ models:
   - match: "opus"
     display_name: "Opus"
     weekly_token_limit: 200000000
-    color: [180, 120, 255]
+    color: [205, 130, 255]
     price: { input: 15.0, output: 75.0, cache_write: 18.75, cache_read: 1.5 }
 
   - match: "sonnet"
     display_name: "Sonnet"
     weekly_token_limit: 400000000
-    color: [90, 170, 255]
+    color: [70, 190, 255]
     price: { input: 3.0, output: 15.0, cache_write: 3.75, cache_read: 0.3 }
 
   - match: "fable"
     display_name: "Fable"
     weekly_token_limit: 400000000
-    color: [90, 220, 180]
+    color: [50, 245, 175]
     price: { input: 3.0, output: 15.0, cache_write: 3.75, cache_read: 0.3 }
 
   - match: "haiku"
     display_name: "Haiku"
     weekly_token_limit: 500000000
-    color: [255, 200, 90]
+    color: [255, 210, 60]
     price: { input: 1.0, output: 5.0, cache_write: 1.25, cache_read: 0.1 }
 
   - match: "gpt"
     display_name: "GPT"
     weekly_token_limit: 100000000
-    color: [120, 200, 120]
+    color: [110, 245, 110]
 
 # Fallback used for models that don't match anything above.
 default_model:
   weekly_token_limit: 100000000
-  color: [150, 150, 150]
+  color: [200, 200, 215]
 
 # Which metric drives the percentage bars: "tokens" or "cost".
 limit_metric: tokens

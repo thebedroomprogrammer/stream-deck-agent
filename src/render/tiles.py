@@ -13,20 +13,23 @@ from PIL import Image, ImageDraw, ImageFont
 
 KEY_SIZE = 96
 
-BG = (18, 18, 22)
-FG = (235, 235, 240)
-MUTED = (140, 140, 150)
-ACCENT = (90, 170, 255)
-WARN = (255, 180, 70)
-DANGER = (255, 90, 90)
-OK = (90, 210, 140)
+BG = (12, 12, 16)
+FG = (255, 255, 255)
+MUTED = (210, 170, 150)
+ACCENT = (255, 140, 30)
+WARN = (255, 150, 30)
+DANGER = (255, 55, 45)
+OK = (60, 235, 130)
+ORANGE = (255, 140, 30)
+RED = (255, 55, 45)
 
 _FONT_CANDIDATES = [
+    "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
+    "/System/Library/Fonts/Supplemental/Verdana Bold.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    "/System/Library/Fonts/HelveticaNeue.ttc",
     "/System/Library/Fonts/SFNSMono.ttf",
     "/System/Library/Fonts/Menlo.ttc",
-    "/System/Library/Fonts/Supplemental/Arial.ttf",
-    "/System/Library/Fonts/Helvetica.ttc",
-    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
 ]
 
@@ -50,6 +53,11 @@ def blank_key(color=BG, size: int = KEY_SIZE) -> Image.Image:
     return Image.new("RGB", (size, size), color)
 
 
+def _stroke_for(font) -> int:
+    """No extra stroke; rely on the font's own weight for boldness."""
+    return 0
+
+
 def _draw_centered(
     draw: ImageDraw.ImageDraw,
     text: str,
@@ -58,9 +66,18 @@ def _draw_centered(
     fill,
     size: int = KEY_SIZE,
 ) -> None:
-    w, h = _text_size(draw, text, font)
+    stroke = _stroke_for(font)
+    bbox = draw.textbbox((0, 0), text, font=font, stroke_width=stroke)
+    w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
     x = (size - w) // 2
-    draw.text((x, y - h // 2), text, font=font, fill=fill)
+    draw.text(
+        (x, y - h // 2),
+        text,
+        font=font,
+        fill=fill,
+        stroke_width=stroke,
+        stroke_fill=fill,
+    )
 
 
 def _fit_font(draw, text: str, max_width: int, start: int, min_size: int = 10):
@@ -216,6 +233,41 @@ def title_key(
         _draw_centered(draw, line2, size // 2 + 16, f2, FG, size)
     else:
         _draw_centered(draw, line1, size // 2, f1, accent, size)
+    return img
+
+
+def progress_segment_key(
+    seg_fill: float,
+    label: str = "",
+    overflow: bool = False,
+    filled_color=ORANGE,
+    empty_color=OK,
+    size: int = KEY_SIZE,
+) -> Image.Image:
+    """One segment of a horizontal progress bar spread across several keys.
+
+    ``seg_fill`` (0..1) is how much of this key is "used": the left portion is
+    drawn in ``filled_color`` (orange/red), the remainder in ``empty_color``
+    (green). ``label`` (e.g. "63%") is drawn on the boundary key.
+    """
+    img = blank_key(size=size)
+    draw = ImageDraw.Draw(img)
+
+    seg_fill = max(0.0, min(1.0, seg_fill))
+    fill_color = RED if overflow else filled_color
+
+    # Full-height green base, then orange/red fill from the left.
+    draw.rectangle([0, 0, size, size], fill=empty_color)
+    fill_w = int(round(size * seg_fill))
+    if fill_w > 0:
+        draw.rectangle([0, 0, fill_w, size], fill=fill_color)
+
+    # Thin divider so the 8 keys read as one continuous bar.
+    draw.rectangle([0, 0, size, size], outline=BG, width=2)
+
+    if label:
+        font = _fit_font(draw, label, size - 8, 34)
+        _draw_centered(draw, label, size // 2, font, (20, 20, 20), size)
     return img
 
 
