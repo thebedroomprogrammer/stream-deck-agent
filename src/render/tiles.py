@@ -242,7 +242,7 @@ def progress_segment_key(
     seg_fill: float,
     label: str = "",
     overflow: bool = False,
-    filled_color=ORANGE,
+    filled_color=RED,
     empty_color=OK,
     size: int = KEY_SIZE,
 ) -> Image.Image:
